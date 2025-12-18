@@ -111,7 +111,13 @@ export const listPosts = async (req: Request, res: Response) => {
         const limit = Number(req.query.limit) > 0 ? Math.floor(Number(req.query.limit)) : 10;
         const skip = (page - 1) * limit;
 
-        const search = String(req.query.search ?? "").trim();
+        const rawSearch =
+            typeof req.body.search === "string"
+                ? req.body.search
+                : "";
+
+        const search = rawSearch.trim();
+
 
 
         const filter: any = {};
@@ -119,7 +125,6 @@ export const listPosts = async (req: Request, res: Response) => {
             const safe = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // escape regex special chars
             filter.$or = [
                 { title: { $regex: safe, $options: "i" } },
-                { body: { $regex: safe, $options: "i" } },
             ];
         }
 
@@ -139,7 +144,7 @@ export const listPosts = async (req: Request, res: Response) => {
         // Default: no liked flags
         let items = itemsRaw.map((p) => ({ ...p, liked: false }));
 
-        // ✅ Enrich with liked=true only if we have a valid userId
+        // Enrich with liked=true only if we have a valid userId
         if (userId && itemsRaw.length > 0) {
             const postIds = itemsRaw.map((p: any) => p._id);
 

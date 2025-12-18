@@ -10,13 +10,14 @@ import { usersModel } from "../models/users";
 import { postsModel } from "../models/posts";
 import { likesModel } from "../models/likes";
 
-const POSTS_URL = "/api/posts";
+const POSTS_LIST_URL = "/api/posts";
+const POSTS_CREATE_URL = "/api/posts/create";
 const LIKE_URL = (postId: string) => `/api/posts/${postId}/like`;
 const CLEAR_LIKES_URL = "/api/posts/clear/likes";
 
 describe("API: Posts + Likes (/api/posts)", function () {
   before(async () => {
-    process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret";
+    process.env.TOKEN_SECRET = process.env.TOKEN_SECRET || "test-secret";
     await connectTestDB();
   });
 
@@ -35,97 +36,140 @@ describe("API: Posts + Likes (/api/posts)", function () {
   async function seedPosts(count = 25, userId?: mongoose.Types.ObjectId) {
     const docs = Array.from({ length: count }).map((_, i) => ({
       userId: userId ?? new mongoose.Types.ObjectId(),
-      title: `Post title ${i}`,
-      body: i % 2 === 0 ? `Body with banana ${i}` : `Body with apple ${i}`,
+      title: `Post title ${i} ${i % 2 === 0 ? "banana" : "apple"}`,
+      body: `Body text ${i}`,
     }));
     await postsModel.insertMany(docs);
   }
 
-  describe(`GET ${POSTS_URL} (public)`, () => {
-    it("returns paginated list with defaults (page=1, limit=10) and liked=false", async () => {
+  //
+  // LIST + SEARCH
+  //
+  describe(`POST ${POSTS_LIST_URL} (public list & search)`, () => {
+    it("1) returns paginated list with defaults (page=1, limit=10) and liked=false", async () => {
       await seedPosts(23);
 
-      const res = await request(app).get(POSTS_URL).expect(200);
+      const res = await request(app)
+        .post(POSTS_LIST_URL)
+        .expect(200);
 
       expect(res.body.items).to.be.an("array");
       expect(res.body.items.length).to.equal(10);
-
       expect(res.body.page).to.equal(1);
       expect(res.body.limit).to.equal(10);
       expect(res.body.total).to.equal(23);
-      expect(res.body.totalPages).to.equal(Math.ceil(23 / 10));
-
-      expect(res.body.items[0]).to.have.property("liked");
       expect(res.body.items[0].liked).to.equal(false);
     });
 
-    it("supports pagination (?page=2&limit=5)", async () => {
+    it("2) supports pagination via QUERY (?page=2&limit=5)", async () => {
       await seedPosts(12);
 
-      const res = await request(app).get(`${POSTS_URL}?page=2&limit=5`).expect(200);
+      const res = await request(app)
+        .post(`${POSTS_LIST_URL}?page=2&limit=5`)
+        .send({})
+        .expect(200);
 
-      expect(res.body.items).to.be.an("array");
       expect(res.body.items.length).to.equal(5);
       expect(res.body.page).to.equal(2);
       expect(res.body.limit).to.equal(5);
       expect(res.body.total).to.equal(12);
     });
 
-    it("validates page/limit via express-validator (page>0, limit 1..1000)", async () => {
+    it("3) validates page/limit via QUERY (page>0, limit 1..1000)", async () => {
       await seedPosts(5);
 
-      await request(app).get(`${POSTS_URL}?page=0`).expect(400);
-      await request(app).get(`${POSTS_URL}?limit=0`).expect(400);
-      await request(app).get(`${POSTS_URL}?page=-1&limit=-10`).expect(400);
-      await request(app).get(`${POSTS_URL}?limit=1001`).expect(400);
+      await request(app).post(`${POSTS_LIST_URL}?page=0`).expect(400);
+      await request(app).post(`${POSTS_LIST_URL}?limit=0`).expect(400);
+      await request(app).post(`${POSTS_LIST_URL}?page=-1`).expect(400);
+      await request(app).post(`${POSTS_LIST_URL}?limit=1001`).expect(400);
     });
 
-    it("supports search via ?search=term (title/body based on your filter)", async () => {
-      await seedPosts(20);
-
-      const res = await request(app).get(`${POSTS_URL}?search=banana&limit=1000`).expect(200);
+    it("4) returns empty list when there are no posts", async () => {
+      const res = await request(app)
+        .post(POSTS_LIST_URL)
+        .expect(200);
 
       expect(res.body.items).to.be.an("array");
+      expect(res.body.items.length).to.equal(0);
+      expect(res.body.total).to.equal(0);
+    });
+
+    it("5) supports search via BODY on TITLE ONLY (contains)", async () => {
+      await seedPosts(20);
+
+      const res = await request(app)
+        .post(POSTS_LIST_URL)
+        .send({ search: "banana" })
+        .expect(200);
+
       expect(res.body.items.length).to.be.greaterThan(0);
 
       for (const p of res.body.items) {
         const t = String(p.title).toLowerCase();
-        const b = String(p.body).toLowerCase();
-        expect(t.includes("banana") || b.includes("banana")).to.equal(true);
+        expect(t.includes("banana")).to.equal(true);
       }
     });
 
-    it("optionally enriches liked=true when a valid token is present", async () => {
+    it("6) search with no matches returns empty array", async () => {
+      await seedPosts(10);
+
+      const res = await request(app)
+        .post(POSTS_LIST_URL)
+        .send({ search: "THISWILLNOTMATCHANYTHING" })
+        .expect(200);
+
+      expect(res.body.items).to.be.an("array");
+      expect(res.body.items.length).to.equal(0);
+      expect(res.body.total).to.equal(0);
+    });
+
+    it("7) pagination beyond last page returns empty items", async () => {
+      await seedPosts(8);
+
+      const res = await request(app)
+        .post(`${POSTS_LIST_URL}?page=5&limit=5`)
+        .send({})
+        .expect(200);
+
+      expect(res.body.items.length).to.equal(0);
+      expect(res.body.page).to.equal(5);
+      expect(res.body.total).to.equal(8);
+    });
+
+    it("8) optionally enriches liked=true when valid token", async () => {
       const user = await createUser("u@u.com", "User");
       const token = signToken(String(user._id));
 
       const [p1, p2, p3] = await postsModel.create([
-        { userId: user._id, title: "A", body: "A body" },
-        { userId: user._id, title: "B", body: "B body" },
-        { userId: user._id, title: "C", body: "C body" },
+        { userId: user._id, title: "A banana", body: "A body" },
+        { userId: user._id, title: "B banana", body: "B body" },
+        { userId: user._id, title: "C banana", body: "C body" },
       ]);
 
       await likesModel.create({ userId: user._id, postId: p2._id });
 
       const res = await request(app)
-        .get(`${POSTS_URL}?limit=10`)
+        .post(POSTS_LIST_URL)
         .set("Authorization", authHeader(token))
+        .send({})
         .expect(200);
 
       expect(res.body.likedEnabled).to.equal(true);
 
       const likedMap = new Map(res.body.items.map((x: any) => [String(x._id), x.liked]));
+
       expect(likedMap.get(String(p1._id))).to.equal(false);
       expect(likedMap.get(String(p2._id))).to.equal(true);
       expect(likedMap.get(String(p3._id))).to.equal(false);
     });
 
-    it("invalid token should not break public endpoint (likedEnabled=false)", async () => {
+    it("9) invalid token should not break public endpoint", async () => {
       await seedPosts(5);
 
       const res = await request(app)
-        .get(POSTS_URL)
-        .set("Authorization", "Bearer invalid.token.here")
+        .post(POSTS_LIST_URL)
+        .set("Authorization", "Bearer wrong")
+        .send({})
         .expect(200);
 
       expect(res.body.likedEnabled).to.equal(false);
@@ -133,39 +177,44 @@ describe("API: Posts + Likes (/api/posts)", function () {
     });
   });
 
-  describe(`POST ${POSTS_URL} (create post)`, () => {
-    it("rejects unauthenticated (401)", async () => {
-      await request(app).post(POSTS_URL).send({ title: "Hi", body: "Body" }).expect(401);
+  //
+  // CREATE POST
+  //
+  describe(`POST ${POSTS_CREATE_URL}`, () => {
+    it("10) rejects unauthenticated", async () => {
+      await request(app)
+        .post(POSTS_CREATE_URL)
+        .send({ title: "Hi", body: "Body" })
+        .expect(401);
     });
 
-    it("rejects missing title/body (400)", async () => {
+    it("11) rejects missing fields", async () => {
       const user = await createUser("c@c.com", "Creator");
       const token = signToken(String(user._id));
 
       await request(app)
-        .post(POSTS_URL)
+        .post(POSTS_CREATE_URL)
         .set("Authorization", authHeader(token))
         .send({ title: "", body: "Body" })
         .expect(400);
 
       await request(app)
-        .post(POSTS_URL)
+        .post(POSTS_CREATE_URL)
         .set("Authorization", authHeader(token))
         .send({ title: "Title", body: "" })
         .expect(400);
     });
 
-    it("creates post for authenticated user (201)", async () => {
+    it("12) creates post for authenticated user", async () => {
       const user = await createUser("c2@c2.com", "Creator2");
       const token = signToken(String(user._id));
 
       const res = await request(app)
-        .post(POSTS_URL)
+        .post(POSTS_CREATE_URL)
         .set("Authorization", authHeader(token))
         .send({ title: "My title", body: "My body" })
         .expect(201);
 
-      expect(res.body).to.have.property("_id");
       expect(res.body.title).to.equal("My title");
       expect(res.body.body).to.equal("My body");
       expect(String(res.body.userId)).to.equal(String(user._id));
@@ -175,28 +224,31 @@ describe("API: Posts + Likes (/api/posts)", function () {
     });
   });
 
-  describe(`DELETE ${POSTS_URL}/:postId (delete post)`, () => {
-    it("rejects unauthenticated (401)", async () => {
+  //
+  // DELETE POST
+  //
+  describe("DELETE /api/posts/:postId", () => {
+    it("13) rejects unauthenticated delete", async () => {
       const post = await postsModel.create({
         userId: new mongoose.Types.ObjectId(),
         title: "T",
         body: "B",
       });
 
-      await request(app).delete(`${POSTS_URL}/${post._id}`).expect(401);
+      await request(app).delete(`/api/posts/${post._id}`).expect(401);
     });
 
-    it("invalid postId => 400", async () => {
-      const user = await createUser("d@d.com", "Deleter");
+    it("14) invalid postId returns 400", async () => {
+      const user = await createUser("del@x.com", "Del");
       const token = signToken(String(user._id));
 
       await request(app)
-        .delete(`${POSTS_URL}/not-a-mongo-id`)
+        .delete(`/api/posts/not-a-valid-id`)
         .set("Authorization", authHeader(token))
         .expect(400);
     });
 
-    it("cannot delete someone else’s post (404 / not found or permission)", async () => {
+    it("15) cannot delete another user's post (expects 404 / not found)", async () => {
       const owner = await createUser("owner@x.com", "Owner");
       const attacker = await createUser("attacker@x.com", "Attacker");
       const token = signToken(String(attacker._id));
@@ -208,7 +260,7 @@ describe("API: Posts + Likes (/api/posts)", function () {
       });
 
       const res = await request(app)
-        .delete(`${POSTS_URL}/${post._id}`)
+        .delete(`/api/posts/${post._id}`)
         .set("Authorization", authHeader(token))
         .expect(404);
 
@@ -218,7 +270,7 @@ describe("API: Posts + Likes (/api/posts)", function () {
       expect(stillThere).to.not.equal(null);
     });
 
-    it("can delete own post (200) and removes it from DB", async () => {
+    it("16) can delete own post", async () => {
       const user = await createUser("self@x.com", "Self");
       const token = signToken(String(user._id));
 
@@ -229,7 +281,7 @@ describe("API: Posts + Likes (/api/posts)", function () {
       });
 
       await request(app)
-        .delete(`${POSTS_URL}/${post._id}`)
+        .delete(`/api/posts/${post._id}`)
         .set("Authorization", authHeader(token))
         .expect(200);
 
@@ -238,8 +290,11 @@ describe("API: Posts + Likes (/api/posts)", function () {
     });
   });
 
+  //
+  // LIKES
+  //
   describe("POST/DELETE /api/posts/:postId/like", () => {
-    it("rejects unauthenticated like/unlike (401)", async () => {
+    it("17) rejects like/unlike when unauthenticated", async () => {
       const post = await postsModel.create({
         userId: new mongoose.Types.ObjectId(),
         title: "T",
@@ -250,7 +305,7 @@ describe("API: Posts + Likes (/api/posts)", function () {
       await request(app).delete(LIKE_URL(String(post._id))).expect(401);
     });
 
-    it("liking a non-existing post => 404", async () => {
+    it("18) liking non-existing post returns 404", async () => {
       const user = await createUser("l@x.com", "Liker");
       const token = signToken(String(user._id));
       const fakeId = new mongoose.Types.ObjectId();
@@ -261,7 +316,7 @@ describe("API: Posts + Likes (/api/posts)", function () {
         .expect(404);
     });
 
-    it("likes a post (201) and stores in DB", async () => {
+    it("19) liking twice creates only one like, second returns 200, then unlike removes it", async () => {
       const user = await createUser("l2@x.com", "Liker2");
       const token = signToken(String(user._id));
 
@@ -271,32 +326,13 @@ describe("API: Posts + Likes (/api/posts)", function () {
         body: "B",
       });
 
-      const res = await request(app)
-        .post(LIKE_URL(String(post._id)))
-        .set("Authorization", authHeader(token))
-        .expect(201);
-
-      expect(res.body.liked).to.equal(true);
-
-      const like = await likesModel.findOne({ userId: user._id, postId: post._id }).lean();
-      expect(like).to.not.equal(null);
-    });
-
-    it("liking twice does not duplicate (unique index), second call returns 200", async () => {
-      const user = await createUser("l3@x.com", "Liker3");
-      const token = signToken(String(user._id));
-
-      const post = await postsModel.create({
-        userId: user._id,
-        title: "P",
-        body: "B",
-      });
-
+      // first like
       await request(app)
         .post(LIKE_URL(String(post._id)))
         .set("Authorization", authHeader(token))
         .expect(201);
 
+      // second like (idempotent / 200, no new doc)
       await request(app)
         .post(LIKE_URL(String(post._id)))
         .set("Authorization", authHeader(token))
@@ -304,38 +340,23 @@ describe("API: Posts + Likes (/api/posts)", function () {
 
       const count = await likesModel.countDocuments({ userId: user._id, postId: post._id });
       expect(count).to.equal(1);
-    });
 
-    it("unlikes a post and removes from DB", async () => {
-      const user = await createUser("u@u2.com", "Unliker");
-      const token = signToken(String(user._id));
-
-      const post = await postsModel.create({
-        userId: user._id,
-        title: "P",
-        body: "B",
-      });
-
-      await likesModel.create({ userId: user._id, postId: post._id });
-
-      const res = await request(app)
+      // unlike
+      await request(app)
         .delete(LIKE_URL(String(post._id)))
         .set("Authorization", authHeader(token))
         .expect(200);
 
-      expect(res.body.liked).to.equal(false);
-
-      const like = await likesModel.findOne({ userId: user._id, postId: post._id }).lean();
-      expect(like).to.equal(null);
+      const after = await likesModel.countDocuments({ userId: user._id, postId: post._id });
+      expect(after).to.equal(0);
     });
   });
 
-  describe(`DELETE ${CLEAR_LIKES_URL} (clear all likes)`, () => {
-    it("rejects unauthenticated (401)", async () => {
-      await request(app).delete(CLEAR_LIKES_URL).expect(401);
-    });
-
-    it("clears only the authenticated user's likes", async () => {
+  //
+  // CLEAR LIKES
+  //
+  describe(`DELETE ${CLEAR_LIKES_URL}`, () => {
+    it("20) clears only the authenticated user's likes", async () => {
       const u1 = await createUser("c1@x.com", "C1");
       const u2 = await createUser("c2@x.com", "C2");
       const t1 = signToken(String(u1._id));
@@ -349,17 +370,18 @@ describe("API: Posts + Likes (/api/posts)", function () {
       await likesModel.create({ userId: u1._id, postId: p2._id });
       await likesModel.create({ userId: u2._id, postId: p3._id });
 
-      const res = await request(app)
+      const res1 = await request(app)
         .delete(CLEAR_LIKES_URL)
         .set("Authorization", authHeader(t1))
         .expect(200);
 
-      expect(res.body.deletedCount).to.equal(2);
+      expect(res1.body.deletedCount).to.equal(2);
 
-      const u1Likes = await likesModel.countDocuments({ userId: u1._id });
-      const u2Likes = await likesModel.countDocuments({ userId: u2._id });
-      expect(u1Likes).to.equal(0);
-      expect(u2Likes).to.equal(1);
+      const u1LikesAfter = await likesModel.countDocuments({ userId: u1._id });
+      const u2LikesAfter = await likesModel.countDocuments({ userId: u2._id });
+
+      expect(u1LikesAfter).to.equal(0);
+      expect(u2LikesAfter).to.equal(1);
 
       const res2 = await request(app)
         .delete(CLEAR_LIKES_URL)

@@ -3,13 +3,14 @@ import { body, param, query } from "express-validator";
 import { authMiddleware } from "../middlewares/authMiddleware";
 import { createPost, deletePost, listPosts } from "../controllers/posts";
 import { clearAllLikes, likePost, unlikePost } from "../controllers/likes";
+import { checkValidationError } from "../middlewares/checkValidationError";
 
 
 export const postsRoute = Router();
 
 
-// GET /posts?page=1&limit=10
-postsRoute.get(
+
+postsRoute.post(
   "/",
   [
     query("page")
@@ -19,22 +20,24 @@ postsRoute.get(
 
     query("limit")
       .optional()
-      .isInt({ gt: 0, lt: 1001 }) // ✅ 1..1000
+      .isInt({ gt: 0, lt: 1001 })
       .withMessage("limit must be between 1 and 1000"),
 
-    query("search")
-      .optional()
+    body("search")
+      .optional({ checkFalsy: true }) // allows "", null
       .isString()
+      .escape()
       .trim()
-      .isLength({ min: 1, max: 100 })
-      .withMessage("search must be 1..100 chars"),
+      .isLength({ max: 200 })
+      .withMessage("search must be at most 200 chars"),
   ],
   listPosts
 );
 
+
 // CREATE (only owner)
 postsRoute.post(
-  "/",
+  "/create",
   authMiddleware,
   [
     body("title").isString().trim().notEmpty().withMessage("title is required"),
@@ -50,6 +53,7 @@ postsRoute.delete(
   [
     param("postId").isMongoId().withMessage("Invalid postId"),
   ],
+  checkValidationError,
   deletePost
 );
 
@@ -60,6 +64,7 @@ postsRoute.post(
   "/:postId/like",
   authMiddleware,
   [param("postId").isMongoId().withMessage("Invalid postId")],
+  checkValidationError, 
   likePost
 );
 
@@ -68,6 +73,7 @@ postsRoute.delete(
   "/:postId/like",
   authMiddleware,
   [param("postId").isMongoId().withMessage("Invalid postId")],
+  checkValidationError,
   unlikePost
 );
 
@@ -75,5 +81,6 @@ postsRoute.delete(
 postsRoute.delete(
   "/clear/likes",
   authMiddleware,
+  checkValidationError,
   clearAllLikes
 );

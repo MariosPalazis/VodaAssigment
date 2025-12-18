@@ -49,7 +49,6 @@ export const login: RequestHandler = async (req: Request, res: Response): Promis
 
 
 export const register: RequestHandler = async (req: Request, res: Response): Promise<any> => {
-    console.log("Registering user: ", req.body.email);
     try {
         //check email exists
         let user: IUsers | null = await usersModel.findByEmail(req.body.email);
