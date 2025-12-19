@@ -29,6 +29,11 @@ const Landing: React.FC<LandingProps> = ({ onRequireAuth }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMessage, setModalMessage] = useState("");
 
+  const openErrorModal = (message: string) => {
+    setModalMessage(message);
+    setModalOpen(true);
+  };
+
   const fetchPosts = async (pageToLoad = 1, searchTerm = search) => {
     try {
       setLoading(true);
@@ -47,8 +52,7 @@ const Landing: React.FC<LandingProps> = ({ onRequireAuth }) => {
       setTotalPages(data.totalPages || 1);
     } catch (err: any) {
       console.error("Failed to load posts", err);
-      setModalMessage("Failed to load posts. Please try again later.");
-      setModalOpen(true);
+      openErrorModal("Failed to load posts. Please try again later.");
     } finally {
       setLoading(false);
     }
@@ -65,7 +69,6 @@ const Landing: React.FC<LandingProps> = ({ onRequireAuth }) => {
   };
 
   const handleLikeToggle = async (post: Post) => {
-    // If not logged in, open login modal instead of doing anything
     if (!token) {
       onRequireAuth("Login to continue");
       return;
@@ -89,6 +92,7 @@ const Landing: React.FC<LandingProps> = ({ onRequireAuth }) => {
       }
     } catch (err) {
       console.error("Failed to toggle like", err);
+      openErrorModal("Failed to update like. Please try again.");
     }
   };
 
@@ -101,7 +105,6 @@ const Landing: React.FC<LandingProps> = ({ onRequireAuth }) => {
   };
 
   const handleCreatePostClick = () => {
-    // If not logged in, open login modal instead of navigating
     if (!token) {
       onRequireAuth("Login to continue");
       return;
@@ -168,7 +171,7 @@ const Landing: React.FC<LandingProps> = ({ onRequireAuth }) => {
               <div className="flex flex-col items-end gap-2">
                 <button
                   onClick={() => handleLikeToggle(post)}
-                  className={`text-xs px-3 py-1 rounded-full border ${
+                  className={`text-xs px-3 py-1 rounded-full border  ${
                     post.liked
                       ? "bg-pink-100 border-pink-400 text-pink-700"
                       : "bg-slate-50 border-slate-300 text-slate-600 hover:bg-slate-100"
@@ -205,11 +208,11 @@ const Landing: React.FC<LandingProps> = ({ onRequireAuth }) => {
         </div>
       )}
 
-      {/* Error modal for fetch failures */}
+      {/* Error modal for fetch/like errors */}
       <InfoModal
         open={modalOpen}
         type="error"
-        title="Failed to load posts"
+        title="Error"
         message={modalMessage}
         onClose={() => setModalOpen(false)}
       />

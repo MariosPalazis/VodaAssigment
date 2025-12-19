@@ -7,12 +7,12 @@ import {
 } from "../features/auth/authSlice";
 import {
   listPostsApi,
-  likePostApi,
   unlikePostApi,
   clearLikesApi,
 } from "../api/posts";
 import type { Post } from "../api/posts";
-
+import ConfirmModal from "../modals/ConfirmModal";
+import InfoModal from "../modals/InfoModal";
 
 const Likes = () => {
   const token = useAppSelector(selectAuthToken);
@@ -21,27 +21,33 @@ const Likes = () => {
 
   const [likedPosts, setLikedPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const fetchLiked = async () => {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [clearing, setClearing] = useState(false);
+
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [infoMessage, setInfoMessage] = useState("");
+
+  const openErrorModal = (message: string) => {
+    setInfoMessage(message);
+    setInfoOpen(true);
+  };
+
+  const loadLikedPosts = async () => {
     if (!token) return;
-
     try {
       setLoading(true);
-      setError(null);
-
-      // get many posts, then filter by liked
       const data = await listPostsApi({
         page: 1,
         limit: 1000,
         search: "",
         token,
       });
-
-      const liked = data.items.filter((p) => p.liked);
-      setLikedPosts(liked);
+      const likedOnly = data.items.filter((p) => p.liked);
+      setLikedPosts(likedOnly);
     } catch (err) {
-      setError("Failed to load liked posts.");
+      console.error("Failed to load liked posts", err);
+      openErrorModal("Failed to load liked posts. Please try again later.");
     } finally {
       setLoading(false);
     }
@@ -49,7 +55,8 @@ const Likes = () => {
 
   useEffect(() => {
     if (!token) return;
-    fetchLiked();
+    loadLikedPosts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   const handleUnlike = async (postId: string) => {
@@ -58,19 +65,27 @@ const Likes = () => {
       await unlikePostApi(postId, token);
       setLikedPosts((prev) => prev.filter((p) => p._id !== postId));
     } catch (err) {
-      console.error("Failed to unlike", err);
+      console.error("Failed to unlike post", err);
+      openErrorModal("Failed to unlike this post. Please try again.");
     }
   };
 
-  const handleClearAll = async () => {
-    if (!token) return;
-    if (!confirm("Clear all your likes?")) return;
+  const handleClearAll = () => {
+    setConfirmOpen(true);
+  };
 
+  const confirmClearAll = async () => {
+    if (!token) return;
     try {
+      setClearing(true);
       await clearLikesApi(token);
-      setLikedPosts([]);
+      await loadLikedPosts();
     } catch (err) {
-      console.error("Failed to clear likes", err);
+      console.error("Failed to clear all likes", err);
+      openErrorModal("Failed to clear likes. Please try again.");
+    } finally {
+      setClearing(false);
+      setConfirmOpen(false);
     }
   };
 
@@ -112,12 +127,6 @@ const Likes = () => {
         )}
       </div>
 
-      {error && (
-        <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">
-          {error}
-        </div>
-      )}
-
       {loading ? (
         <div className="text-sm text-slate-600">Loading liked posts...</div>
       ) : likedPosts.length === 0 ? (
@@ -151,6 +160,26 @@ const Likes = () => {
           ))}
         </ul>
       )}
+
+      {/* Confirm modal for clearing all likes */}
+      <ConfirmModal
+        open={confirmOpen}
+        title="Clear all likes?"
+        message="This will remove all liked posts from your account. This action cannot be undone."
+        confirmLabel={clearing ? "Clearing..." : "Yes, clear all"}
+        cancelLabel="Cancel"
+        onConfirm={confirmClearAll}
+        onCancel={() => setConfirmOpen(false)}
+      />
+
+      {/* Info modal for errors (load/unlike/clear) */}
+      <InfoModal
+        open={infoOpen}
+        type="error"
+        title="Error"
+        message={infoMessage}
+        onClose={() => setInfoOpen(false)}
+      />
     </div>
   );
 };

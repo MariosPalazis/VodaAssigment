@@ -31,7 +31,7 @@ const Navbar: React.FC<NavbarProps> = ({ onAuthClick, onRequireAuth }) => {
         </div>
 
         {/* Center: Nav links */}
-        <nav className="flex gap-4">
+        <nav className="flex gap-1">
           <NavLink
             to="/"
             className={({ isActive }) =>

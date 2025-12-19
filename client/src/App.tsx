@@ -6,6 +6,7 @@ import Landing from "./pages/Landing";
 import Likes from "./pages/Likes";
 import CreatePost from "./pages/CreatePost";
 import AuthModal from "./modals/AuthModal";
+import NotFound from "./pages/NotFound";
 
 function App() {
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -48,6 +49,7 @@ function App() {
           />
           <Route path="/likes" element={<Likes />} />
           <Route path="/create-post" element={<CreatePost />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
 
