@@ -1,17 +1,25 @@
 import { NavLink } from "react-router-dom";
-import { useAppDispatch, useAppSelector } from "../../hooks/reduxHooks";
+import { useAppSelector, useAppDispatch } from "../../hooks/reduxHooks";
 import { logout, selectAuthUser } from "../../features/auth/authSlice";
 
 interface NavbarProps {
   onAuthClick: (mode: "login" | "register") => void;
+  onRequireAuth: (infoText?: string) => void; // 👈 NEW
 }
 
-const Navbar: React.FC<NavbarProps> = ({ onAuthClick }) => {
+const Navbar: React.FC<NavbarProps> = ({ onAuthClick, onRequireAuth }) => {
   const user = useAppSelector(selectAuthUser);
   const dispatch = useAppDispatch();
 
   const handleLogout = () => {
     dispatch(logout());
+  };
+
+  const handleLikesClick: React.MouseEventHandler<HTMLAnchorElement> = (e) => {
+    if (!user) {
+      e.preventDefault();              // stop navigation
+      onRequireAuth("Login to continue"); // open login modal
+    }
   };
 
   return (
@@ -34,8 +42,10 @@ const Navbar: React.FC<NavbarProps> = ({ onAuthClick }) => {
           >
             Landing
           </NavLink>
+
           <NavLink
             to="/likes"
+            onClick={handleLikesClick}  // 👈 intercept
             className={({ isActive }) =>
               `px-3 py-1 rounded-md text-sm font-medium ${
                 isActive ? "bg-sky-100 text-sky-700" : "text-slate-700 hover:bg-slate-100"

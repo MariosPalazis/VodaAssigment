@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAppSelector } from "../hooks/reduxHooks";
 import { selectAuthToken } from "../features/auth/authSlice";
 import {
@@ -7,35 +8,47 @@ import {
   unlikePostApi,
 } from "../api/posts";
 import type { Post } from "../api/posts";
-
+import InfoModal from "../modals/InfoModal";
 
 const PAGE_SIZE = 10;
 
-const Landing = () => {
+interface LandingProps {
+  onRequireAuth: (infoText?: string) => void;
+}
+
+const Landing: React.FC<LandingProps> = ({ onRequireAuth }) => {
   const token = useAppSelector(selectAuthToken);
+  const navigate = useNavigate();
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalMessage, setModalMessage] = useState("");
 
   const fetchPosts = async (pageToLoad = 1, searchTerm = search) => {
     try {
       setLoading(true);
-      setError(null);
+      setModalOpen(false);
+      setModalMessage("");
+
       const data = await listPostsApi({
         page: pageToLoad,
         limit: PAGE_SIZE,
         search: searchTerm,
         token,
       });
+
       setPosts(data.items);
       setPage(data.page);
       setTotalPages(data.totalPages || 1);
     } catch (err: any) {
-      setError("Failed to load posts.");
+      console.error("Failed to load posts", err);
+      setModalMessage("Failed to load posts. Please try again later.");
+      setModalOpen(true);
     } finally {
       setLoading(false);
     }
@@ -43,7 +56,8 @@ const Landing = () => {
 
   useEffect(() => {
     fetchPosts(1, "");
-  }, [token]); // refetch when user logs in/out
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,8 +65,9 @@ const Landing = () => {
   };
 
   const handleLikeToggle = async (post: Post) => {
+    // If not logged in, open login modal instead of doing anything
     if (!token) {
-      alert("You must be logged in to like posts.");
+      onRequireAuth("Login to continue");
       return;
     }
 
@@ -85,36 +100,50 @@ const Landing = () => {
     if (page < totalPages) fetchPosts(page + 1);
   };
 
+  const handleCreatePostClick = () => {
+    // If not logged in, open login modal instead of navigating
+    if (!token) {
+      onRequireAuth("Login to continue");
+      return;
+    }
+    navigate("/create-post");
+  };
+
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold text-slate-800">Posts</h1>
 
-      {/* Search */}
-      <form
-        onSubmit={handleSearchSubmit}
-        className="flex items-center gap-2 max-w-md"
-      >
-        <input
-          type="text"
-          className="flex-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-          placeholder="Search posts by title..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <button
-          type="submit"
-          className="px-3 py-2 text-sm bg-sky-600 text-white rounded-md hover:bg-sky-700"
+      {/* Search + Create button row */}
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        {/* Search */}
+        <form
+          onSubmit={handleSearchSubmit}
+          className="flex items-center gap-2 max-w-md flex-1"
         >
-          Search
-        </button>
-      </form>
+          <input
+            type="text"
+            className="flex-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+            placeholder="Search posts by title..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <button
+            type="submit"
+            className="px-3 py-2 text-sm bg-sky-600 text-white rounded-md hover:bg-sky-700"
+          >
+            Search
+          </button>
+        </form>
 
-      {/* Error */}
-      {error && (
-        <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">
-          {error}
-        </div>
-      )}
+        {/* Create post button */}
+        <button
+          type="button"
+          onClick={handleCreatePostClick}
+          className="text-sm font-medium bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-md"
+        >
+          Create your post
+        </button>
+      </div>
 
       {/* Posts list */}
       {loading ? (
@@ -175,6 +204,15 @@ const Landing = () => {
           </button>
         </div>
       )}
+
+      {/* Error modal for fetch failures */}
+      <InfoModal
+        open={modalOpen}
+        type="error"
+        title="Failed to load posts"
+        message={modalMessage}
+        onClose={() => setModalOpen(false)}
+      />
     </div>
   );
 };

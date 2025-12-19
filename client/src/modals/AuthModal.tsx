@@ -12,9 +12,10 @@ interface AuthModalProps {
   open: boolean;
   mode: "login" | "register";
   onClose: () => void;
+  infoText?: string; // 👈 NEW: show extra text like "Login to continue"
 }
 
-const AuthModal: React.FC<AuthModalProps> = ({ open, mode, onClose }) => {
+const AuthModal: React.FC<AuthModalProps> = ({ open, mode, onClose, infoText }) => {
   const dispatch = useAppDispatch();
   const loading = useAppSelector(selectAuthLoading);
   const error = useAppSelector(selectAuthError);
@@ -95,6 +96,13 @@ const AuthModal: React.FC<AuthModalProps> = ({ open, mode, onClose }) => {
             ×
           </button>
         </div>
+
+        {/* Optional info text */}
+        {infoText && (
+          <div className="px-5 pt-3 text-xs text-slate-500">
+            {infoText}
+          </div>
+        )}
 
         {/* Body */}
         <form onSubmit={handleSubmit} className="px-5 py-4 space-y-4">
