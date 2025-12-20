@@ -2,12 +2,12 @@
 
     1️⃣ Clone the Project
         git clone <repo-url>
-        cd VODA
+        cd VodaAssigment
 
 
         📂 Basic Folder Structure
 
-        VODA
+        VodaAssigment
         │
         ├── README.md
         ├── client
